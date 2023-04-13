@@ -33,8 +33,6 @@ more: https://www.freqtrade.io/en/stable/installation/
 
 
 
-## configuration
-
 
 
 
