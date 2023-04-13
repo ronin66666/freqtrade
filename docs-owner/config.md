@@ -579,4 +579,43 @@ docker-compose up -d
 
 - custom_price_max_distance_ratio：*Defaults to `0.02` 2%).*  用于设置当前价格和自定义入场或出场价格之间的最大距离比率，如果距离比率超过了这个值，Freqtrade将不会使用自定义价格而使用当前价格。默认值为0.02（即2%）。
 
-- 
+- **exchange**：交易所相关配置
+
+  - name：**Required.** 交易所名
+
+  - key：交易所API KEY
+
+  - secret：交易所API SECRET
+
+  - sandbox：用于指定是否使用交易所的沙盒（sandbox）环境进行交易。沙盒环境是交易所提供的一种风险免费的集成测试环境，用户可以在其中模拟交易，以便测试和调试他们的交易策略和代码。
+
+    如果`exchange.sandbox`设置为True，则Freqtrade将使用交易所的沙盒环境进行模拟交易。否则，Freqtrade将使用实际的交易所进行交易。如果 `dry_run` 为 `False`，设置 `exchange.sandbox` 为 `True`，则将尝试与实际的沙盒环境交互，而非真实的交易所环境。在这种情况下，您的交易将被视为实际的交易，并且会在沙盒环境中进行结算，但是您不会使用真实的资金进行交易。因此，在实际的交易中，应将 `exchange.sandbox` 设置为 `False`。
+
+  - pair_whitelist：交易对列表设置
+
+    ```json
+    "pair_whitelist": [
+          "BTC/USDT:USDT",
+          "ETH/USDT:USDT"
+        ],
+    ```
+
+  - pair_blacklist：交易对黑名单，如禁止使用BNB相关交易对
+
+    ```json
+    "pair_blacklist": ["BNB/.*"]
+    ```
+
+  - ccxt_config： 是用于传递给 ccxt 的其他参数，这些参数可以是特定于某个交易所的参数，需要在 ccxt 文档中查找。它适用于同时使用同步和异步的情况。请注意，不应在此处添加交易所密钥等敏感信息，以免泄露到日志中。
+
+  - **markets_refresh_interval**：*Defaults to `60` minutes.* 用于设置市场数据的刷新间隔时间。这个参数表示多少分钟重新加载市场数据。默认值为60分钟，也就是每隔一小时重新加载一次市场数据。如果是短周期交易最好把这个参数设置为更短
+
+  - skip_pair_validation ：*Defaults to `false`* 可以在启动时跳过交易对列表的验证。默认值为false，也就是说，在启动时Freqtrade将验证所有配置的交易对是否可用。如果将其设置为true，Freqtrade将跳过交易对列表的验证。请注意，这可能会导致交易对无法使用或产生意外结果，因此应谨慎使用。
+
+  - skip_open_order_update ：*Defaults to `false`*：否在启动时跳过对未完成订单的更新，以防止交易所出现问题。仅适用于实时交易环境。默认值为 false。
+
+  - unknown_fee_rate：*Defaults to `None`* 是计算交易手续费时使用的回退值。对于手续费以非交易货币计算的交易所来说，这可能很有用。这里提供的值将与“手续费成本”相乘。默认为None。
+
+  - log_responses：*Defaults to `false`* 用于控制是否记录交易所的响应内容。如果设置为True，在调试模式下会记录所有的响应内容，但是需要谨慎使用，因为可能会涉及到一些敏感信息。
+
+  - block_bad_exchanges：*Defaults to `true`.* 用于阻止已知无法正常工作的交易所。默认情况下，建议保持此参数为True，除非您想测试该交易所现在是否可以工作。如果您遇到交易所问题，可以先尝试将此参数设置为False，以便继续尝试运行。
