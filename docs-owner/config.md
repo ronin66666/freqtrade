@@ -445,10 +445,10 @@ docker-compose up -d
   用于确定在启用跟踪止损偏移量之前是否需要达到指定的偏移量。这个选项默认值是 `False`。当设置为 `True` 时，跟踪止损将仅在达到 `trailing_stop_positive_offset` 设定的偏移量时启动。这意味着在达到这个偏移量之前，将使用默认的 `stoploss`。
 
   ```
-  stoploss = -0.10
+  stoploss = -0.9
   trailing_stop = True
-  trailing_stop_positive = 0.01
-  trailing_stop_positive_offset = 0.05
+  trailing_stop_positive = 0.1
+  trailing_stop_positive_offset = 1.5
   trailing_only_offset_is_reached = True
   ```
 
@@ -619,3 +619,29 @@ docker-compose up -d
   - log_responses：*Defaults to `false`* 用于控制是否记录交易所的响应内容。如果设置为True，在调试模式下会记录所有的响应内容，但是需要谨慎使用，因为可能会涉及到一些敏感信息。
 
   - block_bad_exchanges：*Defaults to `true`.* 用于阻止已知无法正常工作的交易所。默认情况下，建议保持此参数为True，除非您想测试该交易所现在是否可以工作。如果您遇到交易所问题，可以先尝试将此参数设置为False，以便继续尝试运行。
+  
+- pairlists：配对列表处理程序定义机器人应该交易的配对列表（配对列表）。在配置中可以使用[`StaticPairList`](https://www.freqtrade.io/en/stable/plugins/#static-pair-list)和动态列表[`VolumePairList`](https://www.freqtrade.io/en/stable/plugins/#volume-pair-list) 处理程序，此外 [`AgeFilter`](https://www.freqtrade.io/en/stable/plugins/#agefilter), [`PrecisionFilter`](https://www.freqtrade.io/en/stable/plugins/#precisionfilter), [`PriceFilter`](https://www.freqtrade.io/en/stable/plugins/#pricefilter), [`ShuffleFilter`](https://www.freqtrade.io/en/stable/plugins/#shufflefilter), [`SpreadFilter`](https://www.freqtrade.io/en/stable/plugins/#spreadfilter) and [`VolatilityFilter`](https://www.freqtrade.io/en/stable/plugins/#volatilityfilter)作为列表过滤器，删除某些对和/或移动它们在配对列表中的位置。
+
+  - StaticPairList：*Defaults to `StaticPairList`.* 静态列表，保持列表处理不变
+
+    ```json
+    "pairlists": [
+        {"method": "StaticPairList"}
+    ],
+    ```
+
+  - VolumePairList：使用成交量来排序或者过滤
+
+    ```json
+    "pairlists": [
+        {
+            "method": "VolumePairList",
+            "number_assets": 20,				//交易对数量前20
+            "sort_key": "quoteVolume",  //根据成交量排序
+            "min_value": 0,							//最小成交量
+            "refresh_period": 1800			//刷新时间
+        }
+    ],
+    ```
+
+    

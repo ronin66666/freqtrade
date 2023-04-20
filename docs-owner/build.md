@@ -31,9 +31,39 @@ activate your virtual environment
 
 more: https://www.freqtrade.io/en/stable/installation/
 
+历史数据下载
+
+```
+freqtrade download-data --timerange 20210101-  -t 1h
+```
 
 
 
+```
+docker compose up -d
+```
+
+
+
+启动交易
+
+docker compose up -d 	
+
+停止并移除镜像
+
+docker compose down
+
+打印日志
+
+docker compose logs -f
+
+本地环境运行
+
+freqtrade trade -c configOwner.json --strategy VolatilitySystem
+
+查看镜像
+
+ docker images
 
 
 
