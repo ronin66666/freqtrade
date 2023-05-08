@@ -37,12 +37,15 @@ more: https://www.freqtrade.io/en/stable/installation/
 freqtrade download-data --timerange 20210101-  -t 1h
 ```
 
+回测
+```
+freqtrade backtesting -c config005.json --timerange 20230301 --strategy Strategy005
+```
 
 
 ```
 docker compose up -d
 ```
-
 
 
 启动交易
