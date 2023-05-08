@@ -11,8 +11,11 @@ from scipy.stats import gaussian_kde
 
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-BTC_PATH = r'D:\devlop\quant\freqtrade\user_data\data\binance\futures\BTC_USDT_USDT-5m-futures.json'
-ETH_PATH = r'D:\devlop\quant\freqtrade\user_data\data\binance\futures\ETH_USDT_USDT-5m-futures.json'
+BTC_PATH_WIN = r'D:\devlop\quant\freqtrade\user_data\data\binance\futures\BTC_USDT_USDT-5m-futures.json'
+ETH_PATH_WIN = r'D:\devlop\quant\freqtrade\user_data\data\binance\futures\ETH_USDT_USDT-5m-futures.json'
+
+BTC_PATH_MAC = "/Users/a123/work/quant/freqtrade/user_data/data/binance/futures/BTC_USDT_USDT-5m-futures.json"
+ETH_PATH_WIN = "/Users/a123/work/quant/freqtrade/user_data/data/binance/futures/ETH_USDT_USDT-5m-futures.json"
 
 # 读取json文件
 def read_data(file_name):
@@ -25,7 +28,6 @@ def read_data(file_name):
     return df
 
 # 计算rsi
-
 def caclute_rsi(dataframe, timeperiod=5):
     dataframe['rsi'] = ta.RSI(dataframe, timeperiod=timeperiod)
     return dataframe
@@ -68,78 +70,64 @@ def atr_stop_loss_finder(dataframe, source="close", length=14, smoothing="RMA", 
     dataframe['stop_loss_short'] = dataframe['high'] + ma * m   # 空头止损
     return dataframe
 
-def nwe(dataframe, window_size=500, n_kernels=8, std_multiplier=3):
-    # calculate midpoints
-    midpoints = (dataframe['open'] + dataframe['close']) / 2
-    # print(midpoints)
-
-    # calculate kernel width
-    kernel_width = window_size // n_kernels
-    # print(kernel_width)
-
-    # calculate weights for each midpoint
-    weights = []
-    for midpoint in midpoints:
-        kernel_weights = []
-        for i in range(n_kernels):
-            x = midpoint - i * kernel_width
-            print("x:", x, "midpoint:", midpoint, "i:", i, "kernel_width:", kernel_width)
-            kernel_weights.append(stats.norm.pdf(x))
-        # print(kernel_weights)
-        weights.append(np.mean(kernel_weights))
-
-    # print(weights)
-    # calculate weighted moving average
-    # wma = pd.Series(midpoints).rolling(window=window_size).apply(lambda x: np.dot(x, weights) / sum(weights), raw=True)
-
-    # # calculate standard deviation
-    # std = pd.Series(midpoints).rolling(window=window_size).std()
-
-    # # calculate upper and lower bands
-    # dataframe['upper_band'] = wma + std * std_multiplier
-    # dataframe['lower_band'] = wma - std * std_multiplier
-
-    return dataframe
-
-def nwe2(df, length=500, bandwidth=8, mult=3):
-    midpoints = (df['open'] + df['close']) / 2
-    kernel_width = length // 8
+def nadaraya_watson_envelope(dataframe, length=500, h=8, mult=3):
+        midpoints = dataframe['close'].values
+        
+        x = np.arange(0, length)
+        gauss_weights = np.exp(-(x[:, None] - x)**2/(2*h**2)) # 预先计算高斯核函数的权重数组
+        y = np.dot(gauss_weights, midpoints)/np.sum(gauss_weights, axis=1) # 一次性计算y值
+        mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
+        upper_band = y + mae
+        lower_band = y - mae
+        dataframe.loc[:, 'upper_band'] = upper_band
+        dataframe.loc[:, 'lower_band'] = lower_band
     
-    upper_band = np.zeros(length)
-    lower_band = np.zeros(length)
-    
-    for i in range(length):
-        kernel_values = np.zeros(length)
-        weights = np.zeros(length)
-        for j in range(length):
-            x = midpoints[j] - midpoints[i]
-            kernel_values[j] = np.exp(-(x/bandwidth)**2/2) / (bandwidth * np.sqrt(2*np.pi))
-            if kernel_values[j] > 0.0001:
-                weights[j] = 1
-        if np.sum(weights) > 0:
-            kde = gaussian_kde(midpoints, weights=weights*kernel_values)
-            y = kde(midpoints[i])
-            mae = np.mean(np.abs(midpoints - y)) * mult
-            upper_band[i] = y + mae
-            lower_band[i] = y - mae
-    print(upper_band)
-    return upper_band, lower_band
-    # return upper_band, lower_band
+        dataframe.loc[:, 'cross_up'] = dataframe['close'] > dataframe['upper_band']
+        dataframe.loc[:, 'cross_down'] = dataframe['close'] < dataframe['lower_band']
+
+        return dataframe
 
 __name__ = '__main__'
-df = read_data(BTC_PATH)
+df = read_data(BTC_PATH_MAC)
 df = caclute_rsi(df)
 df = atr_stop_loss_finder(df, 'close')
+df['upper_band'] = 0
+df_copy = df.tail(500).copy()
+df_copy = nadaraya_watson_envelope(df.tail(500))
+print(df_copy.tail(20))
 
-df = df.tail(500)
-nwe2(df)
 
-# plt.plot(df.index, df['close'], label='close')
-# plt.plot(df.index, upper_band, label='upper band')
-# plt.plot(df.index, lower_band, label='lower band')
-# plt.legend()
-# plt.show()
+# 填充数据
+df.iloc[-500:, df.columns.get_loc('upper_band')] = df_copy['upper_band'].values
 
-# print(df.tail(10))
 
+# df['up'] =  df['open'] < df['close']
+# dataframe = df.copy();
+# dataframe.loc[
+#             (
+#                ((dataframe['up'].shift(1) == True) & (dataframe['cross_up'].shift(1) == True)) &
+#                 ((dataframe['up'] == False) & (dataframe['cross_up'] == True)) & 
+#                 (dataframe['rsi'] > 70)
+#             ),
+#         'enter_short'] = 1
+
+# dataframe.loc[
+#             (
+#                ((dataframe['up'].shift(1) == False) & (dataframe['cross_down'].shift(1) == True)) &
+#                 ((dataframe['up'] == True) & (dataframe['cross_down'] == True)) & 
+#                 (dataframe['rsi'] < 30)
+#             ),
+#         'enter_long'] = 1
+
+
+# filtered_df = dataframe[dataframe['enter_short'] == 1]
+# print(filtered_df)
+
+# df = df[(df['up'].shift(1) == True) & (df['up'] == False)]
+# df = df[df['enter_short'] == 1]
+print(df.tail(20))
+
+# 当前k线的收盘价大于上轨，且上一根k线的收盘价小于上轨，做空
+
+# 当前k线的收盘价小于下轨，且上一根k线的收盘价大于下轨，做多
 

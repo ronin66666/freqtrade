@@ -50,7 +50,7 @@ cross_dn = 0. // 交叉下轨
 if barstate.islast
     y = array.new_float(0) // 创建y轴数组
     
-    sum_e = 0.
+    sum_e = 0. // 误差之和
     for i = 0 to length-1  // 0 ~ 499
         sum = 0.
         sumw = 0.
