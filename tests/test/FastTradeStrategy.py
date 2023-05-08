@@ -47,8 +47,8 @@ class FastTradeStrategy(IStrategy):
         gauss_weights = np.exp(-(x[:, None] - x)**2/(2*h**2)) # 预先计算高斯核函数的权重数组
         y = np.dot(gauss_weights, midpoints)/np.sum(gauss_weights, axis=1) # 一次性计算y值
         mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
-        upper_band = y + mae
-        lower_band = y - mae
+        upper_band = y[-1] + mae
+        lower_band = y[-1] - mae
         # dataframe['upper_band'] = upper_band
         # dataframe['lower_band'] = lower_band
     
@@ -66,11 +66,14 @@ class FastTradeStrategy(IStrategy):
         # df = df.tail(500) # 取最近500条数据
         # 3. 计算nadaraya watson envelope
         upper_band, lower_band = self.nadaraya_watson_envelope(dataframe.tail(500))
-        dataframe['upper_band'] = upper_band
-        dataframe['lower_band'] = lower_band
+        dataframe.loc[dataframe.index[-1], 'upper_band'] = upper_band
+        dataframe.loc[dataframe.index[-1], 'lower_band'] = lower_band
+
+        # dataframe['lower_band'] = lower_band
         dataframe['cross_up'] = dataframe['close'] > dataframe['upper_band']
         dataframe['cross_down'] = dataframe['close'] < dataframe['lower_band']
-        dataframe['up'] =  dataframe['open'] < dataframe['close']
+        print(dataframe.tail(1))
+        # dataframe['up'] =  dataframe['open'] < dataframe['close']
         return dataframe
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:

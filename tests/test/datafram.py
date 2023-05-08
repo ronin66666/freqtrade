@@ -76,30 +76,39 @@ def nadaraya_watson_envelope(dataframe, length=500, h=8, mult=3):
         x = np.arange(0, length)
         gauss_weights = np.exp(-(x[:, None] - x)**2/(2*h**2)) # 预先计算高斯核函数的权重数组
         y = np.dot(gauss_weights, midpoints)/np.sum(gauss_weights, axis=1) # 一次性计算y值
-        mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
-        upper_band = y + mae
-        lower_band = y - mae
-        dataframe.loc[:, 'upper_band'] = upper_band
-        dataframe.loc[:, 'lower_band'] = lower_band
-    
-        dataframe.loc[:, 'cross_up'] = dataframe['close'] > dataframe['upper_band']
-        dataframe.loc[:, 'cross_down'] = dataframe['close'] < dataframe['lower_band']
 
-        return dataframe
+        mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
+
+        # 返回最后一个值的上下轨
+        upper_band = y[-1] + mae
+        lower_band = y[-1] - mae
+        # dataframe['upper_band'] = upper_band
+        # dataframe['lower_band'] = lower_band
+    
+        # cross_up = dataframe['close'] > dataframe['upper_band']
+        # cross_down = dataframe['close'] < dataframe['lower_band']
+
+        return upper_band, lower_band
 
 __name__ = '__main__'
-df = read_data(BTC_PATH_MAC)
+df = read_data(BTC_PATH_WIN)
 df = caclute_rsi(df)
 df = atr_stop_loss_finder(df, 'close')
-df['upper_band'] = 0
-df_copy = df.tail(500).copy()
-df_copy = nadaraya_watson_envelope(df.tail(500))
-print(df_copy.tail(20))
+# df['upper_band'] = 0
+# df_copy = df.tail(500).copy()
+upper_band, lower_band  = nadaraya_watson_envelope(df.tail(500).copy())
+# print(df_copy.tail(20))
 
 
 # 填充数据
-df.iloc[-500:, df.columns.get_loc('upper_band')] = df_copy['upper_band'].values
-
+# df.iloc[-500:, df.columns.get_loc('upper_band')] = df_copy['upper_band'].values
+# df['upper_band'] = df_copy[0]
+df.loc[df.index[-1], 'upper_band'] = upper_band
+df.loc[df.index[-1], 'lower_band'] = lower_band
+df['cross_up'] = df['close'] > df['upper_band']
+df['cross_down'] = df['close'] < df['lower_band']
+# df.loc[df.index[-1], 'cross_up'] = df['close'] > upper_band
+# df.loc[df.index[-1], 'cross_down'] = df['close'] < lower_band
 
 # df['up'] =  df['open'] < df['close']
 # dataframe = df.copy();
