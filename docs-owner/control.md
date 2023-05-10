@@ -1,9 +1,6 @@
 
 
-
-
-UI
-
+## webUI服务配置
 ```
 "api_server": {
     "enabled": true,
@@ -15,10 +12,13 @@ UI
     "CORS_origins": [],
     "username": "***",
     "password": "*****"
-  },
+  }
 
 ```
 
+## docker-compose.yml 配置
+
+```solidity
 docker-compose.yml
 
 ```solidity
@@ -26,12 +26,12 @@ ports:
       - "0.0.0.0:8282:8282"
 ```
 
-telegram
+## telegram push 配置
 
 ```json
 "telegram": {
     "enabled": true,
-    "token": "xxx:xxxxxxxxxxxxxx",
+    "token": "xxx:xxxxxxxxxxxxxx", // 格式
     "chat_id": "chat_id",
      "keyboard":[
             ["/daily", "/weekly", "/monthly", "/stats", "/balance", "/profit"],
