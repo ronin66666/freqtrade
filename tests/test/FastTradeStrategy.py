@@ -114,12 +114,12 @@ class FastTradeStrategy(IStrategy):
 
         #做多止损， 如果最新收盘价 < 做多止损价， 触发止损
         dataframe.loc[
-            (dataframe['stop_loss_long'] == 1) & (last_candle['close'] < dataframe['stop_loss_long']),
+            (dataframe['enter_long'] == 1) & (last_candle['close'] < dataframe['stop_loss_long']),
             'exit_long'] = 1
 
         # 做空止损
         dataframe.loc[
-            (dataframe['stop_loss_short'] == 1) & (last_candle['close'] > dataframe['stop_loss_short']),
+            (dataframe['enter_short'] == 1) & (last_candle['close'] > dataframe['stop_loss_short']),
             'exit_short'
         ] = 1
 
