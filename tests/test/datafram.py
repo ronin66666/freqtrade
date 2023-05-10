@@ -107,6 +107,8 @@ df.loc[df.index[-1], 'upper_band'] = upper_band
 df.loc[df.index[-1], 'lower_band'] = lower_band
 df['cross_up'] = df['close'] > df['upper_band']
 df['cross_down'] = df['close'] < df['lower_band']
+
+
 # df.loc[df.index[-1], 'cross_up'] = df['close'] > upper_band
 # df.loc[df.index[-1], 'cross_down'] = df['close'] < lower_band
 

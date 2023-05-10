@@ -98,10 +98,10 @@ class FastTradeStrategy(IStrategy):
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         dataframe.loc[
-            (dataframe['low'] < dataframe['stop_loss_long']),
+            (dataframe['high'] < dataframe['stop_loss_short']),
             'exit_short'] = 1
         dataframe.loc[
-            dataframe['high'] > dataframe['stop_loss_short'],
+            dataframe['low'] > dataframe['stop_loss_long'],
             'exit_long'] = 1
         # dataframe.loc[
         #     dataframe['enter_long'] == 1,
