@@ -3,6 +3,9 @@ import numpy as np
 import talib.abstract as ta
 from freqtrade.strategy.interface import IStrategy
 from pandas import DataFrame
+from freqtrade.exchange import date_minus_candles
+from typing import Optional
+from freqtrade.persistence import Trade
 
 class FastTradeStrategy(IStrategy):
     
@@ -11,13 +14,17 @@ class FastTradeStrategy(IStrategy):
 
     timeframe = '5m'
     minimal_roi = {
-        "0": 1.5
+        "0": 1.2
     }
+
 
     stoploss = -1
 
     # 计算rsi
     def caclute_rsi(self, dataframe, timeperiod=5):
+        """
+        计算rsi超买或超卖区域
+        """
         dataframe['rsi'] = ta.RSI(dataframe, timeperiod=timeperiod)
         return dataframe
     
@@ -41,6 +48,9 @@ class FastTradeStrategy(IStrategy):
         return dataframe
     
     def nadaraya_watson_envelope(self, dataframe, length=500, h=8, mult=3):
+        """
+        计算上下轨线
+        """
         midpoints = dataframe['close'].values
         
         x = np.arange(0, length)
@@ -49,11 +59,7 @@ class FastTradeStrategy(IStrategy):
         mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
         upper_band = y[-1] + mae
         lower_band = y[-1] - mae
-        # dataframe['upper_band'] = upper_band
-        # dataframe['lower_band'] = lower_band
-    
-        # dataframe['cross_up'] = dataframe['close'] > dataframe['upper_band']
-        # dataframe['cross_down'] = dataframe['close'] < dataframe['lower_band']
+ 
         return upper_band, lower_band
 
 
@@ -61,10 +67,13 @@ class FastTradeStrategy(IStrategy):
         # 1. 计算rsi
         dataframe = self.caclute_rsi(dataframe)
         # 2. 计算atr stop loss
-        dataframe = self.atr_stop_loss_finder(dataframe)
+        dataframe = self.atr_stop_loss_finder(dataframe, m=1.0)
         # dataframe = dataframe.tail(500)
         # df = df.tail(500) # 取最近500条数据
         # 3. 计算nadaraya watson envelope
+        dataframe['up'] = dataframe['open'] < dataframe['close']
+        dataframe['down'] = dataframe['open'] > dataframe['close']
+
         upper_band, lower_band = self.nadaraya_watson_envelope(dataframe.tail(500))
         dataframe.loc[dataframe.index[-1], 'upper_band'] = upper_band
         dataframe.loc[dataframe.index[-1], 'lower_band'] = lower_band
@@ -72,7 +81,8 @@ class FastTradeStrategy(IStrategy):
         # dataframe['lower_band'] = lower_band
         dataframe['cross_up'] = dataframe['close'] > dataframe['upper_band']
         dataframe['cross_down'] = dataframe['close'] < dataframe['lower_band']
-        print(dataframe.tail(1))
+
+        # print(dataframe.tail(20))
         # dataframe['up'] =  dataframe['open'] < dataframe['close']
         return dataframe
     
@@ -80,16 +90,18 @@ class FastTradeStrategy(IStrategy):
        
        dataframe.loc[
             (
-               (dataframe['cross_up'] == True) &
-                # (dataframe['up'] == False) & 
+               (dataframe['cross_up'].shift(1)) & (dataframe['up'].shift(1)) &
+                ((dataframe['cross_up']) & (dataframe['down'])) & 
+                # (dataframe['down']) &
                 (dataframe['rsi'] > 70)
             ),
         'enter_short'] = 1
-       
+
        dataframe.loc[
             (
-               (dataframe['cross_down'] == True) &
-                # (dataframe['up'] == True) & 
+               (dataframe['cross_down'].shift(1) == True) & (dataframe['down'].shift(1)) &
+                ((dataframe['up']) & (dataframe['cross_down'])) &
+                # (dataframe['up']) &
                 (dataframe['rsi'] < 30)
             ),
         'enter_long'] = 1
@@ -97,12 +109,20 @@ class FastTradeStrategy(IStrategy):
        return dataframe
     
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # 最新蜡烛
+        last_candle = dataframe.iloc[-1].squeeze()
+
+        #做多止损， 如果最新收盘价 < 做多止损价， 触发止损
         dataframe.loc[
-            (dataframe['high'] < dataframe['stop_loss_short']),
-            'exit_short'] = 1
-        dataframe.loc[
-            dataframe['low'] > dataframe['stop_loss_long'],
+            (dataframe['stop_loss_long'] == 1) & (last_candle['close'] < dataframe['stop_loss_long']),
             'exit_long'] = 1
+
+        # 做空止损
+        dataframe.loc[
+            (dataframe['stop_loss_short'] == 1) & (last_candle['close'] > dataframe['stop_loss_short']),
+            'exit_short'
+        ] = 1
+
         # dataframe.loc[
         #     dataframe['enter_long'] == 1,
         #     'exit_short'] = 1
@@ -112,6 +132,34 @@ class FastTradeStrategy(IStrategy):
         #     'exit_long'] = 1
         
         return dataframe
+    
+    def adjust_trade_position(self, trade: Trade, current_time: datetime,
+                            current_rate: float, current_profit: float,
+                            min_stake: Optional[float], max_stake: float,
+                            current_entry_rate: float, current_exit_rate: float,
+                            current_entry_profit: float, current_exit_profit: float,
+                            **kwargs) -> Optional[float]:
+        """
+        在交易期间动态调整交易的仓位大小，以便在交易期间增加或减少仓位。
+        """
+        dataframe, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe) # 获取交易对的数据
+
+        if len(dataframe) > 2:
+            last_candle = dataframe.iloc[-1].squeeze()  # 获取最后一行数据，并转换为Series
+            previous_candle = dataframe.iloc[-2].squeeze() # 获取倒数第二行数据，并转换为Series
+            signal_name = 'enter_long' if not trade.is_short else 'enter_short'
+            prior_date = date_minus_candles(self.timeframe, 1, current_time) # 计算当前时间的前一根K线时间
+
+            # Only enlarge position on new signal.
+            # 判断是否需要加仓，如果需要加仓，则返回加仓的仓位大小
+            if (
+                last_candle[signal_name] == 1 # 最后一根K线的做多或做空信号为1
+                and previous_candle[signal_name] != 1 # 倒数第二根K线的做多或做空信号不为1
+                and trade.nr_of_successful_entries < 2 # 当前的交易是新交易， 交易的成功入场次数小于2
+                and trade.orders[-1].order_date_utc < prior_date # 最后一次交易的时间小于当前时间的前一根K线时间，即最后一次交易的时间在当前K线之前
+            ):
+                return trade.stake_amount
+        return None
     
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
                  proposed_leverage: float, max_leverage: float, side: str,
