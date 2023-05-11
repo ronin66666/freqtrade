@@ -113,6 +113,11 @@ freqtrade download-data --timerange 20210101-  -t 1h
 freqtrade backtesting -c config005.json --timerange 20230301 --strategy Strategy005
 ```
 
+运行
+```
+freqtrade trade -c config005.json --strategy Strategy005
+```
+
 
 币安申请子账号
 https://www.binance.com/zh-CN/survey/e222293e45de4540b9c452ecf61e1bdd?ns=subacct-appform

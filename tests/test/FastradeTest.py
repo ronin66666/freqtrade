@@ -84,8 +84,8 @@ def nadaraya_watson_envelope(dataframe, length=500, h=8, mult=3):
         mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
 
         # 返回最后一个值的上下轨
-        upper_band = y[-1] + mae
-        lower_band = y[-1] - mae
+        upper_band = y + mae
+        lower_band = y - mae
         # dataframe['upper_band'] = upper_band
         # dataframe['lower_band'] = lower_band
     
@@ -93,6 +93,8 @@ def nadaraya_watson_envelope(dataframe, length=500, h=8, mult=3):
         # cross_down = dataframe['close'] < dataframe['lower_band']
 
         return upper_band, lower_band
+        return dataframe
+
 
 __name__ = '__main__'
 dataframe = read_data(BTC_PATH_MAC)
@@ -102,22 +104,31 @@ dataframe = atr_stop_loss_finder(dataframe, 'close')
 w  = 500
 
 dataframe = dataframe.tail(1500).copy()
-for i in range(500, len(dataframe)):
-    data = dataframe.iloc[i-500:i, :].copy()
+# for i in range(500, len(dataframe)):
+#     data = dataframe.iloc[i-500:i, :].copy()
 
-    upper_band, lower_band  = nadaraya_watson_envelope(data)
+#     upper_band, lower_band  = nadaraya_watson_envelope(data)
 
-    # 获取索引值
-    index =  dataframe.index[i]
+#     # 获取索引值
+#     index =  dataframe.index[i]
 
-    dataframe.loc[index, 'upper_band'] = upper_band
-    dataframe.loc[index, 'lower_band'] = lower_band
-    dataframe.loc[index, 'cross_up'] = dataframe['close'][index] > upper_band
-    dataframe.loc[index, 'cross_down'] = dataframe['close'][index] < lower_band
+#     dataframe.loc[index, 'upper_band'] = upper_band
+#     dataframe.loc[index, 'lower_band'] = lower_band
+#     dataframe.loc[index, 'cross_up'] = dataframe['close'][index] > upper_band
+#     dataframe.loc[index, 'cross_down'] = dataframe['close'][index] < lower_band
 
 # upper_band, lower_band  = nadaraya_watson_envelope(dataframe.tail(500).copy())
 # print(df_copy.tail(20))
+dataframe['upper_band'] = np.nan
+dataframe['lower_band'] = np.nan
 
+upper_band, lower_band =  nadaraya_watson_envelope(dataframe.tail(500))
+
+dataframe.iloc[-500:, dataframe.columns.get_loc('upper_band')] = upper_band
+dataframe.iloc[-500:, dataframe.columns.get_loc('lower_band')] = lower_band
+
+print(dataframe.head(20))
+print(dataframe.tail(20))
 
 # 填充数据
 # df.iloc[-500:, df.columns.get_loc('upper_band')] = df_copy['upper_band'].values
@@ -150,7 +161,7 @@ for i in range(500, len(dataframe)):
 
 # df = df[(df['up'].shift(1) == True) & (df['up'] == False)]
 # df = df[df['enter_short'] == 1]
-print(dataframe.tail(50))
+# print(dataframe.tail(50))
 
 # 当前k线的收盘价大于上轨，且上一根k线的收盘价小于上轨，做空
 

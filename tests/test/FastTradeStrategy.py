@@ -14,7 +14,7 @@ class FastTradeStrategy(IStrategy):
 
     timeframe = '5m'
     minimal_roi = {
-        "0": 1.2
+        "0": 1.3
     }
 
 
@@ -57,37 +57,44 @@ class FastTradeStrategy(IStrategy):
         gauss_weights = np.exp(-(x[:, None] - x)**2/(2*h**2)) # 预先计算高斯核函数的权重数组
         y = np.dot(gauss_weights, midpoints)/np.sum(gauss_weights, axis=1) # 一次性计算y值
         mae = np.mean(np.abs(midpoints - y))*mult # 平均绝对误差
-        upper_band = y[-1] + mae
-        lower_band = y[-1] - mae
- 
+        upper_band = y + mae
+        lower_band = y - mae
+      
         return upper_band, lower_band
 
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        # print(dataframe.tail(10))
+
         # 1. 计算rsi
         dataframe = self.caclute_rsi(dataframe)
         # 2. 计算atr stop loss
-        dataframe = self.atr_stop_loss_finder(dataframe, m=1.0)
+        dataframe = self.atr_stop_loss_finder(dataframe, m=0.5)
         # dataframe = dataframe.tail(500)
-        # df = df.tail(500) # 取最近500条数据
+        # dataframe = dataframe.tail(500).copy() # 取最近500条数据
         # 3. 计算nadaraya watson envelope
         dataframe['up'] = dataframe['open'] < dataframe['close']
         dataframe['down'] = dataframe['open'] > dataframe['close']
 
+        dataframe['upper_band'] = np.nan
+        dataframe['lower_band'] = np.nan
+
         upper_band, lower_band = self.nadaraya_watson_envelope(dataframe.tail(500))
-        dataframe.loc[dataframe.index[-1], 'upper_band'] = upper_band
-        dataframe.loc[dataframe.index[-1], 'lower_band'] = lower_band
+        
+        dataframe.iloc[-500:, dataframe.columns.get_loc('upper_band')] = upper_band
+        dataframe.iloc[-500:, dataframe.columns.get_loc('lower_band')] = lower_band
 
         # dataframe['lower_band'] = lower_band
         dataframe['cross_up'] = dataframe['close'] > dataframe['upper_band']
         dataframe['cross_down'] = dataframe['close'] < dataframe['lower_band']
 
-        # print(dataframe.tail(20))
-        # dataframe['up'] =  dataframe['open'] < dataframe['close']
+        # print(dataframe.tail(10))
+
         return dataframe
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
        
+       # 前一根k线 上涨且上穿上轨线，且rsi > 70， 当前k线为跌且收盘价 > 上轨线，做空
        dataframe.loc[
             (
                (dataframe['cross_up'].shift(1)) & (dataframe['up'].shift(1)) &
@@ -97,9 +104,10 @@ class FastTradeStrategy(IStrategy):
             ),
         'enter_short'] = 1
 
+         # 前一根k线 下跌且下穿下轨线，且rsi < 30， 当前k线为涨且收盘价 < 下轨线，做多
        dataframe.loc[
             (
-               (dataframe['cross_down'].shift(1) == True) & (dataframe['down'].shift(1)) &
+               (dataframe['cross_down'].shift(1)) & (dataframe['down'].shift(1)) &
                 ((dataframe['up']) & (dataframe['cross_down'])) &
                 # (dataframe['up']) &
                 (dataframe['rsi'] < 30)
@@ -114,12 +122,14 @@ class FastTradeStrategy(IStrategy):
 
         #做多止损， 如果最新收盘价 < 做多止损价， 触发止损
         dataframe.loc[
-            (dataframe['enter_long'] == 1) & (last_candle['close'] < dataframe['stop_loss_long']),
+            ((dataframe['enter_long'] == 1) & (last_candle['close'] < dataframe['stop_loss_long'])) | 
+            (dataframe['enter_short'] == 1),
             'exit_long'] = 1
 
         # 做空止损
         dataframe.loc[
-            (dataframe['enter_short'] == 1) & (last_candle['close'] > dataframe['stop_loss_short']),
+            ((dataframe['enter_short'] == 1) & (last_candle['close'] > dataframe['stop_loss_short'])) | 
+            (dataframe['enter_long'] == 1),
             'exit_short'
         ] = 1
 
@@ -176,4 +186,4 @@ class FastTradeStrategy(IStrategy):
         :param side: 'long' or 'short' - indicating the direction of the proposed trade
         :return: A leverage amount, which is between 1.0 and max_leverage.
         """
-        return 100.0
+        return 50.0
