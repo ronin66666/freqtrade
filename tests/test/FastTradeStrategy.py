@@ -14,7 +14,7 @@ class FastTradeStrategy(IStrategy):
 
     timeframe = '5m'
     minimal_roi = {
-        "0": 1.3
+        "0": 1.2
     }
 
 

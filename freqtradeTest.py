@@ -9,4 +9,4 @@ tryRun = ["trade", "-c", CONFIG_PATH,  "--strategy", "FastTradeStrategy"]
 download = ["download-data", "-c", CONFIG_PATH, "--timerange", "20230101-", "-t", "5m"]
 if __name__ == '__main__':
 
-    main.main(backtesting)
+    main.main(tryRun)

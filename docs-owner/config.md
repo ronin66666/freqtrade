@@ -558,7 +558,7 @@ docker-compose up -d
 
 - entry_pricing：是用来确定进入交易的价格的配置参数。具体来说，entry_pricing有以下几个配置参数：
 
-  - price_side：选择用于获取进入价格的买卖盘面。默认值为"same"，表示使用与交易方向相同的买卖盘面，也可以设置为"ask"或"bid"，表示使用卖盘或买盘。
+  - price_side：选择用于获取进入价格的买卖盘面。默认值为"same"，表示使用与交易方向相同的买卖盘面，也可以设置为"ask"、"bid"、"other"，表示使用卖盘或买盘。
   - use_order_book：*Defaults to `True`.*一个布尔值，表示是否使用订单簿来确定进入价格。如果为False，表示不使用订单簿，则会根据设置的entry_pricing.price_side和entry_pricing.price_last_balance参数，从市场深度中选择一个最佳的价格进行买入。
   - order_book_top：*Defaults to `1`.*当使用订单簿时，指定要使用订单簿中的第几个价格来确定进入价格。默认为1，表示使用订单簿中最顶部的价格。
   - price_last_balance：*Defaults to `0`.* 当不使用订单簿时，用于确定进入价格的系数。默认为0，表示使用与交易方向相同的最佳价格，为1表示使用最近的成交价格，0到1之间的值表示使用两者之间的价格插值。
