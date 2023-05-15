@@ -32,13 +32,13 @@ def main(sysargv: Optional[List[str]] = None) -> None:
     return_code: Any = 1
     try:
         setup_logging_pre()
-        arguments = Arguments(sysargv)
-        args = arguments.get_parsed_arg()
+        arguments = Arguments(sysargv)  # 进入命令行解析
+        args = arguments.get_parsed_arg()  # 获取解析后的参数， 会解析相关命令
 
         # Call subcommand.
         if 'func' in args:
             logger.info(f'freqtrade {__version__}')
-            gc_set_threshold()
+            gc_set_threshold() # 设置gc阈值
             return_code = args['func'](args)
         else:
             # No subcommand was issued.
