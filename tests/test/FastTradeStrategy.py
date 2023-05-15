@@ -1,24 +1,32 @@
 import datetime
+from datetime import datetime
 import numpy as np
 import talib.abstract as ta
 from freqtrade.strategy.interface import IStrategy
 from pandas import DataFrame
 from freqtrade.exchange import date_minus_candles
-from typing import Optional
+from typing import Optional, Union
 from freqtrade.persistence import Trade
+import logging
 
 class FastTradeStrategy(IStrategy):
     
-    # stoploss = -0.01
     can_short = True
+    
 
     timeframe = '5m'
-    minimal_roi = {
-        "0": 1.2
+
+    # 最小投资回报率
+    minimal_roi = { 
+        "0": 100
     }
 
-
+    # trailing_stop
     stoploss = -1
+
+    use_custom_stosoploss = True # 使用自定义止损
+    # trailing_stop_pitive_offset = 0.3 # 设置最小利润
+    
 
     # 计算rsi
     def caclute_rsi(self, dataframe, timeperiod=5):
@@ -65,11 +73,13 @@ class FastTradeStrategy(IStrategy):
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         # print(dataframe.tail(10))
+        
+        # print("excute populate_indicators: pair = ", metadata['pair'])
 
         # 1. 计算rsi
         dataframe = self.caclute_rsi(dataframe)
         # 2. 计算atr stop loss
-        dataframe = self.atr_stop_loss_finder(dataframe, m=0.5)
+        dataframe = self.atr_stop_loss_finder(dataframe, m=2.0)
         # dataframe = dataframe.tail(500)
         # dataframe = dataframe.tail(500).copy() # 取最近500条数据
         # 3. 计算nadaraya watson envelope
@@ -93,16 +103,16 @@ class FastTradeStrategy(IStrategy):
         return dataframe
     
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-       
+
        # 前一根k线 上涨且上穿上轨线，且rsi > 70， 当前k线为跌且收盘价 > 上轨线，做空
        dataframe.loc[
             (
                (dataframe['cross_up'].shift(1)) & (dataframe['up'].shift(1)) &
                 ((dataframe['cross_up']) & (dataframe['down'])) & 
                 # (dataframe['down']) &
-                (dataframe['rsi'] > 70)
+                (dataframe['rsi'] > 80)
             ),
-        'enter_short'] = 1
+        ['enter_short', 'enter_tag']] = (1, 'enter_short_signal')
 
          # 前一根k线 下跌且下穿下轨线，且rsi < 30， 当前k线为涨且收盘价 < 下轨线，做多
        dataframe.loc[
@@ -110,36 +120,22 @@ class FastTradeStrategy(IStrategy):
                (dataframe['cross_down'].shift(1)) & (dataframe['down'].shift(1)) &
                 ((dataframe['up']) & (dataframe['cross_down'])) &
                 # (dataframe['up']) &
-                (dataframe['rsi'] < 30)
+                (dataframe['rsi'] < 20)
             ),
-        'enter_long'] = 1
+        ['enter_long', 'enter_tag']] = (1, 'enter_long_signal')
        
        return dataframe
     
+    
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        # 最新蜡烛
-        last_candle = dataframe.iloc[-1].squeeze()
 
-        #做多止损， 如果最新收盘价 < 做多止损价， 触发止损
         dataframe.loc[
-            ((dataframe['enter_long'] == 1) & (last_candle['close'] < dataframe['stop_loss_long'])) | 
-            (dataframe['enter_short'] == 1),
-            'exit_long'] = 1
-
-        # 做空止损
-        dataframe.loc[
-            ((dataframe['enter_short'] == 1) & (last_candle['close'] > dataframe['stop_loss_short'])) | 
-            (dataframe['enter_long'] == 1),
-            'exit_short'
-        ] = 1
-
-        # dataframe.loc[
-        #     dataframe['enter_long'] == 1,
-        #     'exit_short'] = 1
+            dataframe['enter_long'] == 1,
+            ['exit_short', 'exit_tag']] = (1, 'exit_with_long_signal')
         
-        # dataframe.loc[
-        #     dataframe['enter_short'] == 1,
-        #     'exit_long'] = 1
+        dataframe.loc[
+            dataframe['enter_short'] == 1,
+            ['exit_long', 'exit_tag']] = (1, 'exit_with_short_signal')
         
         return dataframe
     
@@ -149,6 +145,7 @@ class FastTradeStrategy(IStrategy):
                             current_entry_rate: float, current_exit_rate: float,
                             current_entry_profit: float, current_exit_profit: float,
                             **kwargs) -> Optional[float]:
+        print("excute adjust_trade_position, pair = ", trade.pair)
         """
         在交易期间动态调整交易的仓位大小，以便在交易期间增加或减少仓位。
         """
@@ -158,7 +155,7 @@ class FastTradeStrategy(IStrategy):
             last_candle = dataframe.iloc[-1].squeeze()  # 获取最后一行数据，并转换为Series
             previous_candle = dataframe.iloc[-2].squeeze() # 获取倒数第二行数据，并转换为Series
             signal_name = 'enter_long' if not trade.is_short else 'enter_short'
-            prior_date = date_minus_candles(self.timeframe, 1, current_time) # 计算当前时间的前一根K线时间
+            prior_date = date_minus_candles(self.timeframe, 1, current_time) # 获取当前时间的前一根K线时间
 
             # Only enlarge position on new signal.
             # 判断是否需要加仓，如果需要加仓，则返回加仓的仓位大小
@@ -186,4 +183,65 @@ class FastTradeStrategy(IStrategy):
         :param side: 'long' or 'short' - indicating the direction of the proposed trade
         :return: A leverage amount, which is between 1.0 and max_leverage.
         """
-        return 50.0
+        
+        if pair == 'BTC/USDT:USDT' or pair == 'ETH/USDT:USDT':  
+            return 50.0
+
+        return 25.0
+    
+    def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
+                    current_profit: float, **kwargs) -> Optional[Union[str, bool]]:
+        # print("excute custom_exit pair = ", pair)
+
+        """
+        自定义出场逻辑
+        """
+        # 获取之前开仓时的dataframe的k线数据
+        # open_exec_date = trade.open_date_utc.strftime('%Y-%m-%d %H:%M:00+00:00')
+        # print("open_exec_date = ", open_exec_date)
+        analyzed_dataframe, dateTime = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+
+        #找到最近一次开单的k线数据
+        signal_name = 'enter_long' if not trade.is_short else 'enter_short'
+
+        signal_candles = analyzed_dataframe[analyzed_dataframe[signal_name] == 1]
+        if len(signal_candles) == 0:
+            return None
+        last_candle = signal_candles.iloc[-1].squeeze()
+
+        if signal_name == 'enter_long' and current_rate < last_candle['stop_loss_long']:
+            logging.info("exit_long_stop_loss, pair = %s, current_rate = %s, stop_loss_long = %s", pair, current_rate, last_candle['stop_loss_long'])
+            return 'exit_long_stop_loss'
+        elif signal_name == 'enter_short' and current_rate > last_candle['stop_loss_short']:
+            logging.info("exit_short_stop_loss, pair = %s, current_rate = %s, stop_loss_short = %s", pair, current_rate, last_candle['stop_loss_short'])
+            return 'exit_short_stop_loss'
+        else:
+            return None
+    
+    
+    def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime, current_rate: float, current_profit: float, **kwargs) -> float:
+        """
+        自定义止损点，返回止损点，这里只能做移动向上止损，如果返回值低于之前设置的止损点，则该返回值会被忽略，
+        在首次交易调用此方法之前，它将被设定为初始止损stoploss，并且仍然是必需的。
+        """
+
+        custom_stoploss_value = -1
+        if current_profit > 0.5 and current_profit < 1.0: 
+            custom_stoploss_value = current_profit / 2
+        elif current_profit >= 1.0:
+            custom_stoploss_value = current_profit - 0.2
+            
+        #logging.info("excute custom_stoploss, pair = %s, current_profit = %s, stoploss = %s self.stoploss = %s", pair, current_profit, custom_stoploss_value, self.stoploss)
+
+        return custom_stoploss_value
+    
+    def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
+                           rate: float, time_in_force: str, exit_reason: str,
+                           current_time: datetime, **kwargs) -> bool:
+        
+        if trade.is_open and (exit_reason == 'exit_with_long_signal' or exit_reason == 'exit_with_short_signal'):
+            logging.info('confirm_trade_exit false exit_reason = %s', exit_reason)
+            return False
+        return True
+    
+    
