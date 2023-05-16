@@ -249,15 +249,44 @@ class AwesomeStrategy(IStrategy):
 
         # evaluate highest to lowest, so that highest possible stop is used
         if current_profit > 0.40:
-            # 计算积基于当前收益的0.25的止损点
+            # 当收益达到40%使用高于开盘价的25%止损
             return stoploss_from_open(0.25, current_profit, is_short=trade.is_short, leverage=trade.leverage)
         elif current_profit > 0.25:
+            #当收益达到25%使用高于开盘价的15%止损
             return stoploss_from_open(0.15, current_profit, is_short=trade.is_short, leverage=trade.leverage)
         elif current_profit > 0.20:
             return stoploss_from_open(0.07, current_profit, is_short=trade.is_short, leverage=trade.leverage)
 
         # return maximum stoploss value, keeping current stoploss price unchanged
         return 1
+```
+
+
+`stoploss_from_open()` 基于开盘价的移动止损，主要作用：修正做多做空数据
+
+```python
+if current_profit < 0.4:
+    return -1
+retrun stoploss_from_open(0.2, current_profit, is_short=trade.is_short, leverage=trade.leverage) * trade.leverage
+
+```
+- 做多，开盘价为100，当前收益 < 40%, , 不适用止损
+- 当收益为40%时，此时止损价 ~= 140 * （1 - abs(0.2 * 25 / 25)）= 112
+- 当价回落到112时触发止损
+
+当open_relative_stop值越接近当前收益，止损位越接近当前价格，越容易止损
+
+- 当open_relative_stop = 0.1 当前收益为40%, 此时止损位 =  140 * （1 - abs(0.3 * 25 / 25)）= 98
+
+当价位跌倒98时会触发止损
+
+
+止损价格计算
+```python
+if self.is_short:
+            new_loss = float(current_price * (1 + abs(stoploss / leverage)))
+        else:
+            new_loss = float(current_price * (1 - abs(stoploss / leverage)))
 ```
 
 ##### 使用数据框示例中的指标自定义止损

@@ -225,15 +225,12 @@ class FastTradeStrategy(IStrategy):
         在首次交易调用此方法之前，它将被设定为初始止损stoploss，并且仍然是必需的。
         """
 
-        custom_stoploss_value = -1
-        if current_profit > 0.5 and current_profit < 1.0: 
-            custom_stoploss_value = current_profit / 2
-        elif current_profit >= 1.0:
-            custom_stoploss_value = current_profit - 0.2
+        if current_profit < 0.3:
+            return stoplosswithopen
             
-        #logging.info("excute custom_stoploss, pair = %s, current_profit = %s, stoploss = %s self.stoploss = %s", pair, current_profit, custom_stoploss_value, self.stoploss)
+            
 
-        return custom_stoploss_value
+        return trade.stop_loss
     
     def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
                            rate: float, time_in_force: str, exit_reason: str,
