@@ -185,6 +185,85 @@ Configuration (offset is buy_price + 3%):
 
 **注意：**：确保此值 (trailing_stop_positive_offset) 低于最小 ROI，否则最小 ROI 将首先应用并卖出交易。
 
+#### 自定义止损
+
+https://www.freqtrade.io/en/stable/strategy-callbacks/#custom-stoploss
+
+在已开仓的情况下，每5秒钟执行一次自定义止损，知道订单被关闭
+
+必须在策略中设置`use_custom_stoploss = True`才生效， 止损价格只能向上移动止损，如果`custom_stoploss`返回的止损值低于之前设置的止损价位，那么它将被忽略。传统的止损值作为绝对的底线，在首次为交易调用此方法之前，它将被设定为初始止损，并且仍然是必需的。
+
+所有基于时间的计算都应基于 current_time 完成 - 不鼓励使用 `datetime.now() `或 `datetime.utcnow()`，因为这会破坏回测支持。 建议在使用自定义止损值时禁用 `trailing_stop`。 两者可以协同工作，但您可能会遇到移动止损以将价格推高，而您的自定义函数不希望这样，从而导致行为冲突。
+
+##### 移动止损
+
+其他的止损方式参考官方文档
+
+官方例子：使用初始止损，直到利润超过 4%，然后使用当前利润的 50% 的追踪止损，最低为 2.5%，最高为 5%。请注意，止损只能增加，低于当前止损的值将被忽略。
+
+```python
+from datetime import datetime, timedelta
+from freqtrade.persistence import Trade
+
+class AwesomeStrategy(IStrategy):
+
+    # ... populate_* methods
+
+    use_custom_stoploss = True
+
+    def custom_stoploss(self, pair: str, trade: 'Trade', current_time: datetime,
+                        current_rate: float, current_profit: float, **kwargs) -> float:
+
+        if current_profit < 0.04:
+            return self. # return a value bigger than the initial stoploss to keep using the initial stoploss
+
+        # After reaching the desired offset, allow the stoploss to trail by half the profit
+        desired_stoploss = current_profit / 2
+
+        # Use a minimum of 2.5% and a maximum of 5%
+        return max(min(desired_stoploss, 0.05), 0.025)
+```
+
+##### 阶梯式止损
+
+此示例不是持续落后于当前价格，而是根据当前利润设置固定的止损价格水平。
+
+- 当收益达到%20之前使用初始止损self.stoploss
+- 当 profit > 20% 设置止损为7%
+- 当 profit > 25 % 设置止损为15%
+- 当 profit > 40 % 设置止损为 25%
+
+```python
+from datetime import datetime
+from freqtrade.persistence import Trade
+from freqtrade.strategy import stoploss_from_open
+
+class AwesomeStrategy(IStrategy):
+
+    # ... populate_* methods
+
+    use_custom_stoploss = True
+
+    def custom_stoploss(self, pair: str, trade: 'Trade', current_time: datetime,
+                        current_rate: float, current_profit: float, **kwargs) -> float:
+
+        # evaluate highest to lowest, so that highest possible stop is used
+        if current_profit > 0.40:
+            # 计算积基于当前收益的0.25的止损点
+            return stoploss_from_open(0.25, current_profit, is_short=trade.is_short, leverage=trade.leverage)
+        elif current_profit > 0.25:
+            return stoploss_from_open(0.15, current_profit, is_short=trade.is_short, leverage=trade.leverage)
+        elif current_profit > 0.20:
+            return stoploss_from_open(0.07, current_profit, is_short=trade.is_short, leverage=trade.leverage)
+
+        # return maximum stoploss value, keeping current stoploss price unchanged
+        return 1
+```
+
+##### 使用数据框示例中的指标自定义止损
+
+
+
 ### 止损和杠杆
 
 Stoploss and Leverage

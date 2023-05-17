@@ -4,6 +4,7 @@ from freqtrade.strategy.strategy_helper import stoploss_from_open
 # freqtrade backtesting --timerange 20230506- -c config_fast_btc.json --strategy FastTradeStrategy
 
 CONFIG_PATH = '/Users/a123/work/quant/freqtrade/config_fast_btc.json'
+CONFIG_PATH = 'D:\devlop\quant\\freqtrade\config_fast.json'
 
 backtesting = ["backtesting", "--timerange", "20230505-20230507", "-c", CONFIG_PATH, "--strategy", "FastTradeStrategy"]
 tryRun = ["trade", "-c", CONFIG_PATH,  "--strategy", "FastTradeStrategy"]
