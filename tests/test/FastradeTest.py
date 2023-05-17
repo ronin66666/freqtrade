@@ -1,5 +1,6 @@
 import json
 from pandas import DataFrame
+import pandas as pd
 import talib
 import talib.abstract as ta
 from scipy import stats
@@ -9,7 +10,6 @@ from scipy.stats import gaussian_kde
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 
-import qtpylib
 
 BTC_PATH_WIN = (
     r"D:\devlop\quant\freqtrade\user_data\data\binance\futures\BTC_USDT_USDT-5m-futures.json"
@@ -42,18 +42,17 @@ def caclute_rsi(dataframe, timeperiod=5):
     return dataframe
 
 
-def moving_average(atr, length, smoothing="RMA"):
+def moving_average(atr, length, smoothing="SMA"):
     """
     Function to calculate the moving average 平均真实波动范围
     source: the source to calculate the moving average from (atr)
     """
-    rma = ta.RMA(atr, length)  # 不支持，需尝试其他办法
     sma = ta.SMA(atr, length)
     ema = ta.EMA(atr, length)
     wma = ta.WMA(atr, length)
-    if smoothing == "RMA":
-        return rma
-    elif smoothing == "SMA":
+    
+    
+    if smoothing == "SMA":
         return sma
     elif smoothing == "EMA":
         return ema
@@ -80,21 +79,71 @@ def atr_stop_loss_finder(dataframe, source="close", length=14, smoothing="RMA", 
     dataframe["stop_loss_short"] = dataframe["high"] + ma * m  # 空头止损
     return dataframe
 
+def rsi(series, window=14):
+    """
+    compute the n period relative strength indicator
+    """
 
-def nadaraya_watson_envelope(dataframe, length=10, h=8, mult=3):
+    # 100-(100/relative_strength)
+    deltas = np.diff(series)
+    seed = deltas[:window + 1]
+
+    # default values
+    ups = seed[seed > 0].sum() / window
+    downs = -seed[seed < 0].sum() / window
+    rsival = np.zeros_like(series)
+    rsival[:window] = 100. - 100. / (1. + ups / downs)
+
+    # period values
+    for i in range(window, len(series)):
+        delta = deltas[i - 1]
+        if delta > 0:
+            upval = delta
+            downval = 0
+        else:
+            upval = 0
+            downval = -delta
+
+        ups = (ups * (window - 1) + upval) / window
+        downs = (downs * (window - 1.) + downval) / window
+        rsival[i] = 100. - 100. / (1. + ups / downs)
+
+    # return rsival
+    return pd.Series(index=series.index, data=rsival)
+
+def nadaraya_watson_envelope(dataframe, window=2, h=8, mult=3):
     """
     计算上下轨线
     """
-    midpoints = dataframe["close"].values
+    closeSeries = dataframe["close"].squeeze()
+    upper_band = np.full_like(closeSeries, np.nan)
+    lower_band = np.full_like(closeSeries, np.nan)
 
-    x = np.arange(0, length)
-    gauss_weights = np.exp(-((x[:, None] - x) ** 2) / (2 * h**2))  # 预先计算高斯核函数的权重数组
-    y = np.dot(gauss_weights, midpoints) / np.sum(gauss_weights, axis=1)  # 一次性计算y值
-    mae = np.mean(np.abs(midpoints - y)) * mult  # 平均绝对误差
-    upper_band = y + mae
-    lower_band = y - mae
+    # 预先计算高斯核函数的权重数组 [0 ~ 500）
+    x = np.arange(0, window)
+    gauss_weights = np.exp(-((x[:, None] - x) ** 2) / (2 * h**2))
 
-    return upper_band, lower_band
+    for i in range(window, len(closeSeries)):
+
+        closeData = closeSeries[i - window: i]
+        y = np.dot(gauss_weights, closeData) / np.sum(gauss_weights, axis=1)
+        mae = np.mean(np.abs(closeData - y)) * mult
+        if i < window:
+            upper_band[i] = y + mae
+            lower_band[i] = y - mae
+        else:
+            upper_band[i] = y[-1] + mae
+            lower_band[i] = y[-1] - mae
+
+    # x = np.arange(0, window)
+    # gauss_weights = np.exp(-((x[:, None] - x) ** 2) / (2 * h**2))  # 预先计算高斯核函数的权重数组
+    # y = np.dot(gauss_weights, closeSeries) / np.sum(gauss_weights, axis=1)  # 一次性计算y值
+    # mae = np.mean(np.abs(closeSeries - y)) * mult  # 平均绝对误差
+    # upper_band = y + mae
+    # lower_band = y - mae
+    dataframe["upper_band"] = upper_band
+    dataframe["lower_band"] = lower_band
+    return dataframe
 
 def populate_indicators(dataframe: DataFrame, metadata: dict) -> DataFrame:
     
@@ -110,37 +159,50 @@ def populate_indicators(dataframe: DataFrame, metadata: dict) -> DataFrame:
         # dataframe['upper_band'] = np.nan
         # dataframe['lower_band'] = np.nan
 
-        # upper_band, lower_band = nadaraya_watson_envelope(dataframe.tail(500))
+        upper_band, lower_band = nadaraya_watson_envelope(dataframe.tail(500))
         # qtpylob.indicators.ris.plot_candles(dataframe.tail(500), title="BTC/USDT", showlegend=False)
-         qtpylib.indicators.ris(dataframe)
+        
+
         # dataframe.iloc[-500:, dataframe.columns.get_loc('upper_band')] = upper_band
         # dataframe.iloc[-500:, dataframe.columns.get_loc('lower_band')] = lower_band
         
 
         # dataframe['lower_band'] = lower_band
-        dataframe['cross_up'] = dataframe['close'] > dataframe['upper_band']
-        dataframe['cross_down'] = dataframe['close'] < dataframe['lower_band']
+        # dataframe['cross_up'] = dataframe['close'] > dataframe['upper_band']
+        # dataframe['cross_down'] = dataframe['close'] < dataframe['lower_band']
 
         # print(dataframe.tail(10))
 
         return dataframe
 
+
+
 __name__ = "__main__"
 dataframe = read_data(BTC_PATH_MAC)
-dataframe = caclute_rsi(dataframe)
-dataframe = atr_stop_loss_finder(dataframe, "close")
+# dataframe = caclute_rsi(dataframe)
+# dataframe = atr_stop_loss_finder(dataframe, "close")
 
-w = 500
+# w = 500
 
-dataframe = dataframe.tail(1500).copy()
+# # dataframe = dataframe.tail(1500).copy()
 
-dataframe["upper_band"] = np.nan
-dataframe["lower_band"] = np.nan
+# dataframe["upper_band"] = np.nan
+# dataframe["lower_band"] = np.nan
 
-upper_band, lower_band = nadaraya_watson_envelope(dataframe.tail(500))
 
-dataframe.iloc[-500:, dataframe.columns.get_loc("upper_band")] = upper_band
-dataframe.iloc[-500:, dataframe.columns.get_loc("lower_band")] = lower_band
+# dataframe.iloc[-500:, dataframe.columns.get_loc("upper_band")] = upper_band
+# dataframe.iloc[-500:, dataframe.columns.get_loc("lower_band")] = lower_band
 
-print(dataframe.head(20))
-print(dataframe.tail(20))
+# print(dataframe.head(20))
+# print(dataframe.tail(10))
+
+dataframe = dataframe.head(10).copy()
+dataframe = nadaraya_watson_envelope(dataframe)
+print(dataframe)
+
+# for i in range(0, 10):
+#     print(i)
+
+# rsi = rsi(dataframe["close"].head(30), 14)
+# dataframe['rsi'] = rsi
+# print(rsi)
