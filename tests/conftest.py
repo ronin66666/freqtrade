@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, Mock, PropertyMock
@@ -12,7 +12,6 @@ import arrow
 import numpy as np
 import pandas as pd
 import pytest
-from telegram import Chat, Message, Update
 
 from freqtrade import constants
 from freqtrade.commands import Arguments
@@ -182,7 +181,7 @@ def get_patched_exchange(mocker, config, api_mock=None, id='binance',
     patch_exchange(mocker, api_mock, id, mock_markets, mock_supported_modes)
     config['exchange']['name'] = id
     try:
-        exchange = ExchangeResolver.load_exchange(id, config, load_leverage_tiers=True)
+        exchange = ExchangeResolver.load_exchange(config, load_leverage_tiers=True)
     except ImportError:
         exchange = Exchange(config)
     return exchange
@@ -413,6 +412,14 @@ def patch_gc(mocker) -> None:
 
 
 @pytest.fixture(autouse=True)
+def user_dir(mocker, tmpdir) -> Path:
+    user_dir = Path(tmpdir) / "user_data"
+    mocker.patch('freqtrade.configuration.configuration.create_userdata_dir',
+                 return_value=user_dir)
+    return user_dir
+
+
+@pytest.fixture(autouse=True)
 def patch_coingekko(mocker) -> None:
     """
     Mocker to coingekko to speed up tests
@@ -486,7 +493,6 @@ def get_default_conf(testdatadir):
         },
         "exchange": {
             "name": "binance",
-            "enabled": True,
             "key": "key",
             "secret": "secret",
             "pair_whitelist": [
@@ -504,7 +510,7 @@ def get_default_conf(testdatadir):
             {"method": "StaticPairList"}
         ],
         "telegram": {
-            "enabled": True,
+            "enabled": False,
             "token": "token",
             "chat_id": "0",
             "notification_settings": {},
@@ -548,13 +554,6 @@ def get_default_conf_usdt(testdatadir):
         },
     })
     return configuration
-
-
-@pytest.fixture
-def update():
-    _update = Update(0)
-    _update.message = Message(0, datetime.utcnow(), Chat(0, 0))
-    return _update
 
 
 @pytest.fixture

@@ -37,7 +37,7 @@ freqtrade trade --freqaimodel ReinforcementLearner --strategy MyRLStrategy --con
 where `ReinforcementLearner` will use the templated `ReinforcementLearner` from `freqai/prediction_models/ReinforcementLearner` (or a custom user defined one located in `user_data/freqaimodels`). The strategy, on the other hand, follows the same base [feature engineering](freqai-feature-engineering.md) with `feature_engineering_*` as a typical Regressor. The difference lies in the creation of the targets, Reinforcement Learning doesn't require them. However, FreqAI requires a default (neutral) value to be set in the action column:
 
 ```python
-    def set_freqai_targets(self, dataframe, **kwargs):
+    def set_freqai_targets(self, dataframe, **kwargs) -> DataFrame:
         """
         *Only functional with FreqAI enabled strategies*
         Required function to set the targets for the model.
@@ -53,17 +53,19 @@ where `ReinforcementLearner` will use the templated `ReinforcementLearner` from 
         # For RL, there are no direct targets to set. This is filler (neutral)
         # until the agent sends an action.
         dataframe["&-action"] = 0
+        return dataframe
 ```
 
 Most of the function remains the same as for typical Regressors, however, the function below shows how the strategy must pass the raw price data to the agent so that it has access to raw OHLCV in the training environment:
 
 ```python
-    def feature_engineering_standard(self, dataframe, **kwargs):
+    def feature_engineering_standard(self, dataframe: DataFrame, **kwargs) -> DataFrame:
         # The following features are necessary for RL models
         dataframe[f"%-raw_close"] = dataframe["close"]
         dataframe[f"%-raw_open"] = dataframe["open"]
         dataframe[f"%-raw_high"] = dataframe["high"]
         dataframe[f"%-raw_low"] = dataframe["low"]
+    return dataframe
 ```
 
 Finally, there is no explicit "label" to make - instead it is necessary to assign the `&-action` column which will contain the agent's actions when accessed in `populate_entry/exit_trends()`. In the present example, the neutral action to 0. This value should align with the environment used. FreqAI provides two environments, both use 0 as the neutral action.
@@ -133,7 +135,14 @@ Parameter details can be found [here](freqai-parameter-table.md), but in general
 
 ## Creating a custom reward function
 
-As you begin to modify the strategy and the prediction model, you will quickly realize some important differences between the Reinforcement Learner and the Regressors/Classifiers. Firstly, the strategy does not set a target value (no labels!). Instead, you set the `calculate_reward()` function inside the `MyRLEnv` class (see below). A default `calculate_reward()` is provided inside `prediction_models/ReinforcementLearner.py` to demonstrate the necessary building blocks for creating rewards, but users are encouraged to create their own custom reinforcement learning model class (see below) and save it to `user_data/freqaimodels`. It is inside the `calculate_reward()` where creative theories about the market can be expressed. For example, you can reward your agent when it makes a winning trade, and penalize the agent when it makes a losing trade. Or perhaps, you wish to reward the agent for entering trades, and penalize the agent for sitting in trades too long. Below we show examples of how these rewards are all calculated:
+!!! danger "Not for production"
+    Warning!
+    The reward function provided with the Freqtrade source code is a showcase of functionality designed to show/test as many possible environment control features as possible. It is also designed to run quickly on small computers. This is a benchmark, it is *not* for live production. Please beware that you will need to create your own custom_reward() function or use a template built by other users outside of the Freqtrade source code.
+
+As you begin to modify the strategy and the prediction model, you will quickly realize some important differences between the Reinforcement Learner and the Regressors/Classifiers. Firstly, the strategy does not set a target value (no labels!). Instead, you set the `calculate_reward()` function inside the `MyRLEnv` class (see below). A default `calculate_reward()` is provided inside `prediction_models/ReinforcementLearner.py` to demonstrate the necessary building blocks for creating rewards, but this is *not* designed for production. Users *must* create their own custom reinforcement learning model class or use a pre-built one from outside the Freqtrade source code and save it to `user_data/freqaimodels`. It is inside the `calculate_reward()` where creative theories about the market can be expressed. For example, you can reward your agent when it makes a winning trade, and penalize the agent when it makes a losing trade. Or perhaps, you wish to reward the agent for entering trades, and penalize the agent for sitting in trades too long. Below we show examples of how these rewards are all calculated:
+
+!!! note "Hint"
+    The best reward functions are ones that are continuously differentiable, and well scaled. In other words, adding a single large negative penalty to a rare event is not a good idea, and the neural net will not be able to learn that function. Instead, it is better to add a small negative penalty to a common event. This will help the agent learn faster. Not only this, but you can help improve the continuity of your rewards/penalties by having them scale with severity according to some linear/exponential functions. In other words, you'd slowly scale the penalty as the duration of the trade increases. This is better than a single large penalty occuring at a single point in time.
 
 ```python
     from freqtrade.freqai.prediction_models.ReinforcementLearner import ReinforcementLearner
@@ -167,6 +176,11 @@ As you begin to modify the strategy and the prediction model, you will quickly r
             User made custom environment. This class inherits from BaseEnvironment and gym.env.
             Users can override any functions from those parent classes. Here is an example
             of a user customized `calculate_reward()` function.
+
+            Warning!
+            This is function is a showcase of functionality designed to show as many possible
+            environment control features as possible. It is also designed to run quickly
+            on small computers. This is a benchmark, it is *not* for live production.
             """
             def calculate_reward(self, action: int) -> float:
                 # first, penalize if the action is not valid
@@ -180,7 +194,7 @@ As you begin to modify the strategy and the prediction model, you will quickly r
 
                 # you can use feature values from dataframe
                 # Assumes the shifted RSI indicator has been generated in the strategy.
-                rsi_now = self.raw_features[f"%-rsi-period-10_shift-1_{pair}_"
+                rsi_now = self.raw_features[f"%-rsi-period_10_shift-1_{pair}_"
                                 f"{self.config['timeframe']}"].iloc[self._current_tick]
 
                 # reward agent for entering trades
