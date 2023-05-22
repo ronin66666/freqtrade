@@ -88,9 +88,9 @@ class FreqtradeBot(LoggingMixin):
         self.rpc: RPCManager = RPCManager(self)
 
         self.dataprovider = DataProvider(self.config, self.exchange, rpc=self.rpc)
-        self.pairlists = PairListManager(self.exchange, self.config, self.dataprovider)
+        self.pairlists = PairListManager(self.exchange, self.config, self.dataprovider) # 交易对列表管理器
 
-        self.dataprovider.add_pairlisthandler(self.pairlists)
+        self.dataprovider.add_pairlisthandler(self.pairlists)  #添加交易对处理器
 
         # Attach Dataprovider to strategy instance
         self.strategy.dp = self.dataprovider

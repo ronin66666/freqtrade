@@ -162,7 +162,7 @@ class FastTradeStrategy(IStrategy):
             if (
                 last_candle[signal_name] == 1 # 最后一根K线的做多或做空信号为1
                 and previous_candle[signal_name] != 1 # 倒数第二根K线的做多或做空信号不为1
-                and trade.nr_of_successful_entries < 2 # 当前的交易是新交易， 交易的成功入场次数小于2
+                and trade.nr_of_successful_entries < 3 # 当前的交易是新交易， 交易的成功入场次数小于2
                 and trade.orders[-1].order_date_utc < prior_date # 最后一次交易的时间小于当前时间的前一根K线时间，即最后一次交易的时间在当前K线之前
             ):
                 return trade.stake_amount

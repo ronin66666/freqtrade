@@ -184,9 +184,9 @@ class IStrategy(ABC, HyperStrategyMixin):
         Strategy init - runs after dataprovider has been added.
         Must call bot_start()
         """
-        self.load_freqAI_model()
+        self.load_freqAI_model() # load freqAI model
 
-        strategy_safe_wrapper(self.bot_start)()
+        strategy_safe_wrapper(self.bot_start)() # call bot_start
 
         self.ft_load_hyper_params(self.config.get('runmode') == RunMode.HYPEROPT)
 

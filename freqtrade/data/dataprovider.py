@@ -44,22 +44,22 @@ class DataProvider:
         self._exchange = exchange
         self._pairlists = pairlists
         self.__rpc = rpc
-        self.__cached_pairs: Dict[PairWithTimeframe, Tuple[DataFrame, datetime]] = {}
+        self.__cached_pairs: Dict[PairWithTimeframe, Tuple[DataFrame, datetime]] = {} # 交易对和时间框架的缓存
         self.__slice_index: Optional[int] = None
-        self.__cached_pairs_backtesting: Dict[PairWithTimeframe, DataFrame] = {}
+        self.__cached_pairs_backtesting: Dict[PairWithTimeframe, DataFrame] = {}   # 回测缓存
         self.__producer_pairs_df: Dict[str,
-                                       Dict[PairWithTimeframe, Tuple[DataFrame, datetime]]] = {}
-        self.__producer_pairs: Dict[str, List[str]] = {}
-        self._msg_queue: deque = deque()
+                                       Dict[PairWithTimeframe, Tuple[DataFrame, datetime]]] = {} # 生产者交易对dataframe的缓存
+        self.__producer_pairs: Dict[str, List[str]] = {} # 生产者交易对
+        self._msg_queue: deque = deque() # 消息队列
 
-        self._default_candle_type = self._config.get('candle_type_def', CandleType.SPOT)
-        self._default_timeframe = self._config.get('timeframe', '1h')
+        self._default_candle_type = self._config.get('candle_type_def', CandleType.SPOT) # 默认蜡烛类型
+        self._default_timeframe = self._config.get('timeframe', '1h') # 默认时间框架，1小时
 
         self.__msg_cache = PeriodicCache(
-            maxsize=1000, ttl=timeframe_to_seconds(self._default_timeframe))
+            maxsize=1000, ttl=timeframe_to_seconds(self._default_timeframe))    # 消息缓存，最大1000，ttl为时间框架
 
-        self.producers = self._config.get('external_message_consumer', {}).get('producers', [])
-        self.external_data_enabled = len(self.producers) > 0
+        self.producers = self._config.get('external_message_consumer', {}).get('producers', []) # 生产者
+        self.external_data_enabled = len(self.producers) > 0 # 是否启用外部数据
 
     def _set_dataframe_max_index(self, limit_index: int):
         """
