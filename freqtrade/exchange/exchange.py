@@ -60,6 +60,7 @@ class Exchange:
     # or by specifying them in the configuration.
     _ft_has_default: Dict = {
         "stoploss_on_exchange": False,
+        "stop_price_param": "stopPrice",
         "order_time_in_force": ["GTC"],
         "ohlcv_params": {},
         "ohlcv_candle_limit": 500,
@@ -91,7 +92,7 @@ class Exchange:
         # TradingMode.SPOT always supported and not required in this list
     ]
 
-    def __init__(self, config: Config, validate: bool = True,
+    def __init__(self, config: Config, *, validate: bool = True,
                  load_leverage_tiers: bool = False) -> None:
         """
         Initializes this module with the given config,
@@ -106,8 +107,7 @@ class Exchange:
         # Lock event loop. This is necessary to avoid race-conditions when using force* commands
         # Due to funding fee fetching.
         self._loop_lock = Lock()
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop = self._init_async_loop()
         self._config: Config = {}
 
         self._config.update(config)
@@ -210,6 +210,11 @@ class Exchange:
             self.loop.run_until_complete(self._api_async.close())
         if self.loop and not self.loop.is_closed():
             self.loop.close()
+
+    def _init_async_loop(self) -> asyncio.AbstractEventLoop:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
 
     def validate_config(self, config):
         # Check if timeframe is available
@@ -862,7 +867,7 @@ class Exchange:
         }
         if stop_loss:
             dry_order["info"] = {"stopPrice": dry_order["price"]}
-            dry_order["stopPrice"] = dry_order["price"]
+            dry_order[self._ft_has['stop_price_param']] = dry_order["price"]
             # Workaround to avoid filling stoploss orders immediately
             dry_order["ft_order_type"] = "stoploss"
         orderbook: Optional[OrderBook] = None
@@ -885,7 +890,7 @@ class Exchange:
                 'filled': _amount,
                 'remaining': 0.0,
                 'status': "closed",
-                'cost': (dry_order['amount'] * average) / leverage
+                'cost': (dry_order['amount'] * average)
             })
             # market orders will always incurr taker fees
             dry_order = self.add_dry_order_fee(pair, dry_order, 'taker')
@@ -1014,7 +1019,7 @@ class Exchange:
             from freqtrade.persistence import Order
             order = Order.order_by_id(order_id)
             if order:
-                ccxt_order = order.to_ccxt_object()
+                ccxt_order = order.to_ccxt_object(self._ft_has['stop_price_param'])
                 self._dry_run_open_orders[order_id] = ccxt_order
                 return ccxt_order
             # Gracefully handle errors with dry-run orders.
@@ -1115,11 +1120,11 @@ class Exchange:
         """
         if not self._ft_has.get('stoploss_on_exchange'):
             raise OperationalException(f"stoploss is not implemented for {self.name}.")
-
+        price_param = self._ft_has['stop_price_param']
         return (
-            order.get('stopPrice', None) is None
-            or ((side == "sell" and stop_loss > float(order['stopPrice'])) or
-                (side == "buy" and stop_loss < float(order['stopPrice'])))
+            order.get(price_param, None) is None
+            or ((side == "sell" and stop_loss > float(order[price_param])) or
+                (side == "buy" and stop_loss < float(order[price_param])))
         )
 
     def _get_stop_order_type(self, user_order_type) -> Tuple[str, str]:
@@ -1159,8 +1164,8 @@ class Exchange:
 
     def _get_stop_params(self, side: BuySell, ordertype: str, stop_price: float) -> Dict:
         params = self._params.copy()
-        # Verify if stopPrice works for your exchange!
-        params.update({'stopPrice': stop_price})
+        # Verify if stopPrice works for your exchange, else configure stop_price_param
+        params.update({self._ft_has['stop_price_param']: stop_price})
         return params
 
     @retrier(retries=0)
@@ -1424,6 +1429,47 @@ class Exchange:
         except (ccxt.NetworkError, ccxt.ExchangeError) as e:
             raise TemporaryError(
                 f'Could not get positions due to {e.__class__.__name__}. Message: {e}') from e
+        except ccxt.BaseError as e:
+            raise OperationalException(e) from e
+
+    @retrier(retries=0)
+    def fetch_orders(self, pair: str, since: datetime) -> List[Dict]:
+        """
+        Fetch all orders for a pair "since"
+        :param pair: Pair for the query
+        :param since: Starting time for the query
+        """
+        if self._config['dry_run']:
+            return []
+
+        def fetch_orders_emulate() -> List[Dict]:
+            orders = []
+            if self.exchange_has('fetchClosedOrders'):
+                orders = self._api.fetch_closed_orders(pair, since=since_ms)
+                if self.exchange_has('fetchOpenOrders'):
+                    orders_open = self._api.fetch_open_orders(pair, since=since_ms)
+                    orders.extend(orders_open)
+            return orders
+
+        try:
+            since_ms = int((since.timestamp() - 10) * 1000)
+            if self.exchange_has('fetchOrders'):
+                try:
+                    orders: List[Dict] = self._api.fetch_orders(pair, since=since_ms)
+                except ccxt.NotSupported:
+                    # Some exchanges don't support fetchOrders
+                    # attempt to fetch open and closed orders separately
+                    orders = fetch_orders_emulate()
+            else:
+                orders = fetch_orders_emulate()
+            self._log_exchange_response('fetch_orders', orders)
+            orders = [self._order_contracts_to_amount(o) for o in orders]
+            return orders
+        except ccxt.DDoSProtection as e:
+            raise DDosProtection(e) from e
+        except (ccxt.NetworkError, ccxt.ExchangeError) as e:
+            raise TemporaryError(
+                f'Could not fetch positions due to {e.__class__.__name__}. Message: {e}') from e
         except ccxt.BaseError as e:
             raise OperationalException(e) from e
 
@@ -2370,12 +2416,12 @@ class Exchange:
                 # Must fetch the leverage tiers for each market separately
                 # * This is slow(~45s) on Okx, makes ~90 api calls to load all linear swap markets
                 markets = self.markets
-                symbols = []
 
-                for symbol, market in markets.items():
+                symbols = [
+                    symbol for symbol, market in markets.items()
                     if (self.market_is_future(market)
-                            and market['quote'] == self._config['stake_currency']):
-                        symbols.append(symbol)
+                        and market['quote'] == self._config['stake_currency'])
+                ]
 
                 tiers: Dict[str, List[Dict]] = {}
 
@@ -2395,25 +2441,26 @@ class Exchange:
                 else:
                     logger.info("Using cached leverage_tiers.")
 
-                async def gather_results():
+                async def gather_results(input_coro):
                     return await asyncio.gather(*input_coro, return_exceptions=True)
 
                 for input_coro in chunks(coros, 100):
 
                     with self._loop_lock:
-                        results = self.loop.run_until_complete(gather_results())
+                        results = self.loop.run_until_complete(gather_results(input_coro))
 
-                    for symbol, res in results:
-                        tiers[symbol] = res
+                    for res in results:
+                        if isinstance(res, Exception):
+                            logger.warning(f"Leverage tier exception: {repr(res)}")
+                            continue
+                        symbol, tier = res
+                        tiers[symbol] = tier
                 if len(coros) > 0:
                     self.cache_leverage_tiers(tiers, self._config['stake_currency'])
                 logger.info(f"Done initializing {len(symbols)} markets.")
 
                 return tiers
-            else:
-                return {}
-        else:
-            return {}
+        return {}
 
     def cache_leverage_tiers(self, tiers: Dict[str, List[Dict]], stake_currency: str) -> None:
 
@@ -2429,14 +2476,17 @@ class Exchange:
     def load_cached_leverage_tiers(self, stake_currency: str) -> Optional[Dict[str, List[Dict]]]:
         filename = self._config['datadir'] / "futures" / f"leverage_tiers_{stake_currency}.json"
         if filename.is_file():
-            tiers = file_load_json(filename)
-            updated = tiers.get('updated')
-            if updated:
-                updated_dt = parser.parse(updated)
-                if updated_dt < datetime.now(timezone.utc) - timedelta(weeks=4):
-                    logger.info("Cached leverage tiers are outdated. Will update.")
-                    return None
-            return tiers['data']
+            try:
+                tiers = file_load_json(filename)
+                updated = tiers.get('updated')
+                if updated:
+                    updated_dt = parser.parse(updated)
+                    if updated_dt < datetime.now(timezone.utc) - timedelta(weeks=4):
+                        logger.info("Cached leverage tiers are outdated. Will update.")
+                        return None
+                return tiers['data']
+            except Exception:
+                logger.exception("Error loading cached leverage tiers. Refreshing.")
         return None
 
     def fill_leverage_tiers(self) -> None:
@@ -2891,8 +2941,8 @@ class Exchange:
                 if nominal_value >= tier['minNotional']:
                     return (tier['maintenanceMarginRate'], tier['maintAmt'])
 
-            raise OperationalException("nominal value can not be lower than 0")
+            raise ExchangeError("nominal value can not be lower than 0")
             # The lowest notional_floor for any pair in fetch_leverage_tiers is always 0 because it
             # describes the min amt for a tier, and the lowest tier will always go down to 0
         else:
-            raise OperationalException(f"Cannot get maintenance ratio using {self.name}")
+            raise ExchangeError(f"Cannot get maintenance ratio using {self.name}")

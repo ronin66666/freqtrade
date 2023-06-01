@@ -39,7 +39,7 @@ def main(sysargv: Optional[List[str]] = None) -> None:
         if 'func' in args:
             logger.info(f'freqtrade {__version__}')
             gc_set_threshold() # 设置gc阈值
-            return_code = args['func'](args)
+            return_code = args['func'](args) # 执行方法，交易相关的方法在freqtrade/commands/trade_commands.py中
         else:
             # No subcommand was issued.
             raise OperationalException(

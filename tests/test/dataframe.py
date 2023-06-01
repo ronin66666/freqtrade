@@ -4,7 +4,9 @@ import pandas as pd
 
 __name__ = "__main__"
 
-data = {"name": ["a", "b"], "age": [10, 30]}
+data = {"name": ["a", "b"], 
+        "age": [10, 30]
+        }
 df = pd.DataFrame(data)
 # print(df)
 # df.iloc[0, df.columns.get_loc('age')] = 20

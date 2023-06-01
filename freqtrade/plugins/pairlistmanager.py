@@ -32,6 +32,9 @@ class PairListManager(LoggingMixin):
         self._pairlist_handlers: List[IPairList] = []
         self._tickers_needed = False
         self._dataprovider: Optional[DataProvider] = dataprovider
+
+
+        # Cache for pairlist 处理器
         for pairlist_handler_config in self._config.get('pairlists', []):
             pairlist_handler = PairListResolver.load_pairlist(
                 pairlist_handler_config['method'],

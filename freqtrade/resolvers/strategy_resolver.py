@@ -45,15 +45,20 @@ class StrategyResolver(IResolver):
                                        "the strategy class to use.")
 
         strategy_name = config['strategy']
+
+        # 加载策略
         strategy: IStrategy = StrategyResolver._load_strategy(
             strategy_name, config=config,
             extra_dir=config.get('strategy_path'))
         strategy.ft_load_params_from_file()
+
+
         # Set attributes
         # Check if we need to override configuration
         #             (Attribute name,                    default,     subkey)
-        attributes = [("minimal_roi",                     {"0": 10.0}),
-                      ("timeframe",                       None),
+        # 策略参数，如果没有设置，则使用默认值
+        attributes = [("minimal_roi",                     {"0": 10.0}), # 最小投资回报率，如果没有设置，则使用默认值 1000%
+                      ("timeframe",                       None),    
                       ("stoploss",                        None),
                       ("trailing_stop",                   None),
                       ("trailing_stop_positive",          None),
@@ -78,6 +83,8 @@ class StrategyResolver(IResolver):
                       ("max_entry_position_adjustment",      -1),
                       ("max_open_trades",                    -1)
                       ]
+        
+        # 使用config和策略参数，设置策略的属性
         for attribute, default in attributes:
             StrategyResolver._override_attribute_helper(strategy, config,
                                                         attribute, default)
