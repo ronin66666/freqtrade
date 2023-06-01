@@ -209,7 +209,7 @@ class FastTradeStrategy(IStrategy):
         """
         自定义出场逻辑
         """
-        endry_candle, _ = self.get_cached_entry_pairs(pair, self.timeframe, self.config['candle_type_def', CandleType.FUTURES])
+        endry_candle = self.get_cached_entry_pairs(pair, self.timeframe)
         if endry_candle is None:
             return None
         #计算止损位
@@ -230,7 +230,7 @@ class FastTradeStrategy(IStrategy):
         """
         
         #计算盈亏比，盈亏比为1：1.3时，移动止损
-        endry_candle, _ = self.get_cached_entry_pairs(pair, self.timeframe, self.config['candle_type_def', CandleType.FUTURES])
+        endry_candle = self.get_cached_entry_pairs(pair, self.timeframe)
         stop_loss = -1
 
         if endry_candle is None:
@@ -261,23 +261,38 @@ class FastTradeStrategy(IStrategy):
         last_candle = dataframe.iloc[-1].squeeze()  # 获取最后一行数据，并转换为Series
 
         # 缓存最后一进入根K线的数据，用于后续的交易出场逻辑（为这个K线的止损价位）
-        self._set_cached_entry_pairs(pair, self.timeframe, self.config['candle_type_def', CandleType.FUTURES], last_candle)
+        self._set_cached_entry_pairs(pair, self.timeframe, last_candle)
         return True
     
-    def _set_cached_entry_pairs(self, pair: str, timeframe: str, candle_type: CandleType, candle: Series, **kwargs) -> None:
+    def _set_cached_entry_pairs(self, pair: str, timeframe: str, candle: Series, **kwargs) -> None:
         """
         Set cached entry pairs for the given pair and timeframe.
         """
-        key = (pair, timeframe, candle_type)
-        self.cached_entry_pairs[key] = (candle, datetime.now(timezone.utc))
+        key = (pair, timeframe, self.config.get('candle_type_def', CandleType.FUTURES))
+        self.cached_entry_pairs[key] = candle
 
-    def get_cached_entry_pairs(self, pair: str, timeframe: str, candle_type: CandleType, **kwargs) -> Optional[Tuple[Series, datetime]]:
+    def get_cached_entry_pairs(self, pair: str, timeframe: str, **kwargs) -> Optional[Series]:
         """
         Get cached entry pairs for the given pair and timeframe.
         """
-        key = (pair, timeframe, candle_type)
-        return self.cached_entry_pairs[key]
+        key = (pair, timeframe, self.config.get('candle_type_def', CandleType.FUTURES))
+        if key in self.cached_entry_pairs:
+            return self.cached_entry_pairs[key] 
+        return None
+    
+    def clear_cached_entry_pairs(self, **kwargs) -> None:
+        """
+        Clear cached entry pairs.
+        """
+        self.cached_entry_pairs.clear()
 
+    def delete_cached_entry_pairs(self, pair: str, timeframe: str, **kwargs) -> None:
+        """
+        Delete cached entry pairs for the given pair and timeframe.
+        """
+        key = (pair, timeframe, self.config.get('candle_type_def', CandleType.FUTURES))
+        if key in self.cached_entry_pairs:
+            del self.cached_entry_pairs[key]
     
     
     def confirm_trade_exit(self, pair: str, trade: Trade, order_type: str, amount: float,
@@ -287,4 +302,5 @@ class FastTradeStrategy(IStrategy):
         if trade.is_open and (exit_reason == 'exit_with_long_signal' or exit_reason == 'exit_with_short_signal'):
             logging.info('confirm_trade_exit false exit_reason = %s', exit_reason)
             return False
+        self.delete_cached_entry_pairs(pair, self.timeframe)
         return True
